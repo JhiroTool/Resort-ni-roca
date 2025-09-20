@@ -107,6 +107,30 @@ $bookings = executeQuery($bookingsQuery, [$customerId], 'i');
         <!-- Bookings List -->
         <div class="bookings-section">
             <div class="container">
+                <?php if (isset($_GET['payment_success'])): ?>
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i>
+                    <strong>Payment Submitted!</strong> Your payment has been submitted successfully. 
+                    We'll confirm your booking once payment is verified.
+                </div>
+                <?php endif; ?>
+
+                <?php if (isset($_GET['error'])): ?>
+                <div class="alert alert-error">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Error:</strong> 
+                    <?php 
+                    switch($_GET['error']) {
+                        case 'no_booking_id': echo 'No booking ID provided.'; break;
+                        case 'booking_not_found': echo 'Booking not found.'; break;
+                        case 'booking_not_payable': echo 'This booking is not available for payment.'; break;
+                        case 'already_paid': echo 'This booking has already been paid.'; break;
+                        default: echo 'An error occurred.';
+                    }
+                    ?>
+                </div>
+                <?php endif; ?>
+
                 <?php if (empty($bookings)): ?>
                 <div class="empty-state">
                     <div class="empty-content">
@@ -347,6 +371,31 @@ $bookings = executeQuery($bookingsQuery, [$customerId], 'i');
             margin-top: 80px;
             min-height: 100vh;
             background: #f8f9fa;
+        }
+
+        .alert {
+            padding: 1rem 1.5rem;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .alert.alert-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .alert.alert-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .alert i {
+            font-size: 1.2rem;
         }
 
         .header-actions {
