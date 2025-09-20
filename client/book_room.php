@@ -496,8 +496,42 @@ $selectedRoomType = isset($_GET['type']) ? $_GET['type'] : '';
             form.addEventListener('submit', function(e) {
                 e.preventDefault();
                 
+                // Validate form before submission
+                const selectedRoom = document.querySelector('.room-card.selected');
+                const checkin = checkinInput.value;
+                const checkout = checkoutInput.value;
+                const guests = guestsInput.value;
+                
+                console.log('Form data:', {
+                    selectedRoom: selectedRoom ? selectedRoom.dataset.roomId : null,
+                    checkin,
+                    checkout,
+                    guests
+                });
+                
+                if (!selectedRoom) {
+                    alert('Please select a room');
+                    return;
+                }
+                
+                if (!checkin || !checkout) {
+                    alert('Please select check-in and check-out dates');
+                    return;
+                }
+                
+                if (!guests) {
+                    alert('Please select number of guests');
+                    return;
+                }
+                
                 const formData = new FormData(form);
                 const submitBtn = document.getElementById('bookNowBtn');
+                
+                // Debug FormData
+                console.log('FormData entries:');
+                for (let [key, value] of formData.entries()) {
+                    console.log(key, value);
+                }
                 
                 // Disable button and show loading
                 submitBtn.disabled = true;
@@ -508,20 +542,38 @@ $selectedRoomType = isset($_GET['type']) ? $_GET['type'] : '';
                     method: 'POST',
                     body: formData
                 })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Redirect to payment or confirmation page
-                        window.location.href = `booking_confirmation.php?booking_id=${data.booking_id}`;
-                    } else {
-                        alert(data.message || 'An error occurred. Please try again.');
+                .then(response => {
+                    console.log('Response status:', response.status);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.text();
+                })
+                .then(text => {
+                    console.log('Raw response:', text);
+                    try {
+                        const data = JSON.parse(text);
+                        console.log('Parsed data:', data);
+                        
+                        if (data.success) {
+                            alert('Booking successful! Redirecting to confirmation page.');
+                            window.location.href = `booking_confirmation.php?booking_id=${data.booking_id}`;
+                        } else {
+                            alert(data.message || 'An error occurred. Please try again.');
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = '<i class="fas fa-credit-card"></i> Book Now';
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse JSON:', e);
+                        console.log('Response was not JSON:', text);
+                        alert('Server error. Please try again.');
                         submitBtn.disabled = false;
                         submitBtn.innerHTML = '<i class="fas fa-credit-card"></i> Book Now';
                     }
                 })
                 .catch(error => {
-                    console.error('Error:', error);
-                    alert('An error occurred. Please try again.');
+                    console.error('Fetch error:', error);
+                    alert('Network error. Please check your connection and try again.');
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = '<i class="fas fa-credit-card"></i> Book Now';
                 });

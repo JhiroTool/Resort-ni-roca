@@ -15,6 +15,10 @@ requireLogin();
 // Set JSON response header
 header('Content-Type: application/json');
 
+// Add debugging
+error_log("Process booking started for customer: " . $_SESSION['cust_id']);
+error_log("POST data: " . print_r($_POST, true));
+
 try {
     // Validate request method
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -31,6 +35,7 @@ try {
     $requiredFields = ['room_id', 'checkin', 'checkout', 'guests'];
     foreach ($requiredFields as $field) {
         if (!isset($_POST[$field]) || empty($_POST[$field])) {
+            error_log("Missing field: $field");
             throw new Exception("Missing required field: $field");
         }
     }
@@ -63,11 +68,14 @@ try {
     $roomQuery = "SELECT * FROM room WHERE Room_ID = ? AND Room_Status = 'Available'";
     $roomResult = executeQuery($roomQuery, [$roomId], 'i');
     
-    if (!$roomResult) {
+    error_log("Room query executed, result count: " . (is_array($roomResult) ? count($roomResult) : 'null'));
+    
+    if (!$roomResult || empty($roomResult)) {
         throw new Exception('Selected room is not available');
     }
     
     $room = $roomResult[0];
+    error_log("Room details: " . print_r($room, true));
     
     // Check room capacity
     if ($guests > $room['Room_Cap']) {
@@ -125,10 +133,19 @@ try {
         $bookingQuery = "INSERT INTO booking (Cust_ID, Booking_IN, Booking_Out, Booking_Cost, Booking_Status, Guests) 
                         VALUES (?, ?, ?, ?, 'Pending', ?)";
         $bookingStmt = $conn->prepare($bookingQuery);
-        $bookingStmt->bind_param('issdi', $customerId, $checkin . ' 16:00:00', $checkout . ' 16:00:00', $totalCost, $guests);
+        // Prepare datetime strings
+        $checkinDateTime = $checkin . ' 16:00:00';
+        $checkoutDateTime = $checkout . ' 16:00:00';
+        
+        error_log("About to bind parameters: customerId=$customerId, checkin=$checkinDateTime, checkout=$checkoutDateTime, totalCost=$totalCost, guests=$guests");
+        $bookingStmt->bind_param('issdi', $customerId, $checkinDateTime, $checkoutDateTime, $totalCost, $guests);
+        error_log("Parameters bound successfully");
         
         if (!$bookingStmt->execute()) {
-            throw new Exception('Failed to create booking');
+            error_log("Booking statement execution failed: " . $bookingStmt->error);
+            throw new Exception('Failed to create booking: ' . $bookingStmt->error);
+        } else {
+            error_log("Booking statement executed successfully");
         }
         
         $bookingId = $conn->insert_id;

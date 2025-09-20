@@ -265,12 +265,14 @@ function startSecureSession() {
             $_SESSION['session_regenerated'] = true;
         }
         
-        // Set secure session parameters
-        if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
-            ini_set('session.cookie_secure', 1);
+        // Set secure session parameters (only if session not already started)
+        if (session_status() == PHP_SESSION_NONE) {
+            if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
+                ini_set('session.cookie_secure', 1);
+            }
+            ini_set('session.cookie_httponly', 1);
+            ini_set('session.use_only_cookies', 1);
         }
-        ini_set('session.cookie_httponly', 1);
-        ini_set('session.use_only_cookies', 1);
     }
 }
 
