@@ -472,6 +472,11 @@ $bookings = executeQuery($bookingsQuery, [$customerId], 'i');
             color: #721c24;
         }
 
+        .status-badge.completed {
+            background: #d4edda;
+            color: #155724;
+        }
+
         .booking-details {
             padding: 1rem 1.5rem;
         }
