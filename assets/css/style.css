@@ -548,6 +548,19 @@ body {
     font-size: 2rem;
     color: #4a9960;
     margin-bottom: 0.5rem;
+    font-feature-settings: "kern" 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.stat h3 span {
+    display: inline;
+}
+
+.stat h3 .slash {
+    font-family: 'Poppins', Arial, sans-serif;
+    font-weight: inherit;
 }
 
 .stat p {

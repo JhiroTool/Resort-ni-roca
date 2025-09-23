@@ -290,20 +290,54 @@ document.addEventListener('DOMContentLoaded', function() {
     function animateStats() {
         const statNumbers = document.querySelectorAll('.stat h3');
         statNumbers.forEach(stat => {
+            const originalText = stat.textContent.trim();
+            
+            // Special handling for 24/7 - animate the 24 but keep the /7
+            if (originalText === '24/7') {
+                let currentNumber = 0;
+                const finalNumber = 24;
+                const increment = finalNumber / 50; // Slower animation for 24/7
+                
+                const updateStats = setInterval(() => {
+                    currentNumber += increment;
+                    if (currentNumber >= finalNumber) {
+                        stat.textContent = '24/7';
+                        clearInterval(updateStats);
+                    } else {
+                        stat.textContent = Math.floor(currentNumber) + '/7';
+                    }
+                }, 30);
+                return;
+            }
+            
+            // Skip elements with data-no-animate attribute
+            if (stat.hasAttribute('data-no-animate')) {
+                return;
+            }
+            
+            // Skip animation for other special characters (but not 24/7 which we handle above)
+            if (originalText.includes('-') || originalText.match(/[a-zA-Z].*[0-9]|[0-9].*[a-zA-Z]/)) {
+                return;
+            }
+            
             const finalNumber = parseInt(stat.textContent.replace(/\D/g, ''));
             const suffix = stat.textContent.replace(/[0-9]/g, '');
-            let currentNumber = 0;
-            const increment = finalNumber / 100;
             
-            const updateStats = setInterval(() => {
-                currentNumber += increment;
-                if (currentNumber >= finalNumber) {
-                    stat.textContent = finalNumber + suffix;
-                    clearInterval(updateStats);
-                } else {
-                    stat.textContent = Math.floor(currentNumber) + suffix;
-                }
-            }, 20);
+            // Only animate if we have a valid number
+            if (finalNumber && finalNumber > 0) {
+                let currentNumber = 0;
+                const increment = finalNumber / 100;
+                
+                const updateStats = setInterval(() => {
+                    currentNumber += increment;
+                    if (currentNumber >= finalNumber) {
+                        stat.textContent = finalNumber + suffix;
+                        clearInterval(updateStats);
+                    } else {
+                        stat.textContent = Math.floor(currentNumber) + suffix;
+                    }
+                }, 20);
+            }
         });
     }
 
