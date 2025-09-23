@@ -1,15 +1,48 @@
 <?php
 /**
  * Room Management System - Paradise Resort
- * Complete CRUD operations for rooms
+ * Modern redesigned interface for complete room CRUD operations
  */
 
-// Start secure session and check admin login
+// Start secure session
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// SECURITY CHECK - Admin authentication required
+if (!isset($_SESSION['admin_id']) || !isset($_SESSION['admin_username']) || !isset($_SESSION['admin_role'])) {
+    // Redirect to admin login page
+    header("Location: ../login.php?admin=1&error=access_denied");
+    exit();
+}
+
+// Verify session is still valid (additional security)
+if (empty($_SESSION['admin_id']) || empty($_SESSION['admin_username'])) {
+    // Session corrupted, destroy and redirect
+    session_destroy();
+    header("Location: ../login.php?admin=1&error=session_expired");
+    exit();
+}
+
+// Database connection
 require_once 'includes/database.php';
-$adminId = AuthManager::checkAdminLogin();
 $db = new DatabaseManager();
 $pdo = $db->getConnection();
-$adminInfo = AuthManager::getAdminInfo($pdo, $adminId);
+
+// Get admin info for display
+$adminInfo = ['Admin_Email' => $_SESSION['admin_username']];
+if ($pdo) {
+    try {
+        $stmt = $pdo->prepare("SELECT Admin_Email FROM administrator WHERE Admin_ID = ?");
+        $stmt->execute([$_SESSION['admin_id']]);
+        $result = $stmt->fetch();
+        if ($result) {
+            $adminInfo = $result;
+        }
+    } catch (PDOException $e) {
+        error_log("Admin info fetch error: " . $e->getMessage());
+    }
+}
 
 // Handle AJAX requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -84,10 +117,10 @@ function addRoom($pdo, $data) {
         ");
         
         return $stmt->execute([
-            AdminUtils::sanitizeInput($data['room_type']),
+            htmlspecialchars(trim($data['room_type']), ENT_QUOTES, 'UTF-8'),
             (float)$data['room_rate'],
             (int)$data['room_capacity'],
-            AdminUtils::sanitizeInput($data['room_status'])
+            htmlspecialchars(trim($data['room_status']), ENT_QUOTES, 'UTF-8')
         ]);
     } catch (PDOException $e) {
         error_log("Add room error: " . $e->getMessage());
@@ -106,10 +139,10 @@ function updateRoom($pdo, $data) {
         ");
         
         return $stmt->execute([
-            AdminUtils::sanitizeInput($data['room_type']),
+            htmlspecialchars(trim($data['room_type']), ENT_QUOTES, 'UTF-8'),
             (float)$data['room_rate'],
             (int)$data['room_capacity'],
-            AdminUtils::sanitizeInput($data['room_status']),
+            htmlspecialchars(trim($data['room_status']), ENT_QUOTES, 'UTF-8'),
             (int)$data['room_id']
         ]);
     } catch (PDOException $e) {
@@ -184,7 +217,10 @@ function getFallbackRooms() {
 }
 
 $rooms = getAllRooms($pdo);
-$flash = NotificationManager::getFlashMessage();
+$totalRooms = count($rooms);
+$availableRooms = count(array_filter($rooms, fn($r) => $r['Room_Status'] === 'Available'));
+$unavailableRooms = count(array_filter($rooms, fn($r) => $r['Room_Status'] === 'Unavailable'));
+$totalRevenue = array_sum(array_column($rooms, 'total_revenue'));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -192,256 +228,286 @@ $flash = NotificationManager::getFlashMessage();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Room Management - Paradise Resort Admin</title>
-    <link rel="stylesheet" href="../assets/css/dashboard.css">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'inter': ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#4a9960',
+                        'primary-dark': '#3a7a4e',
+                        secondary: '#66d9a3',
+                    }
+                }
+            }
+        }
+    </script>
 </head>
-<body>
-    <div class="admin-dashboard">
-        <!-- Sidebar Navigation -->
-        <nav class="admin-sidebar">
-            <div class="sidebar-header">
-                <div class="logo">
-                    <i class="fas fa-umbrella-beach"></i>
-                    <h2>Paradise Resort</h2>
-                </div>
-                <button class="sidebar-toggle" id="sidebarToggle">
-                    <i class="fas fa-bars"></i>
-                </button>
-            </div>
-            
-            <div class="sidebar-menu">
-                <a href="dashboard.php" class="menu-item">
-                    <i class="fas fa-tachometer-alt"></i>
-                    <span>Dashboard</span>
-                </a>
-                <a href="manage_bookings.php" class="menu-item">
-                    <i class="fas fa-calendar-check"></i>
-                    <span>Bookings</span>
-                </a>
-                <a href="manage_rooms.php" class="menu-item active">
-                    <i class="fas fa-bed"></i>
-                    <span>Rooms</span>
-                </a>
-                <a href="manage_customers.php" class="menu-item">
-                    <i class="fas fa-users"></i>
-                    <span>Customers</span>
-                </a>
-                <a href="manage_amenities.php" class="menu-item">
-                    <i class="fas fa-star"></i>
-                    <span>Amenities</span>
-                </a>
-                <a href="manage_services.php" class="menu-item">
-                    <i class="fas fa-concierge-bell"></i>
-                    <span>Services</span>
-                </a>
-                <a href="reports.php" class="menu-item">
-                    <i class="fas fa-chart-bar"></i>
-                    <span>Reports</span>
-                </a>
-                <a href="settings.php" class="menu-item">
-                    <i class="fas fa-cog"></i>
-                    <span>Settings</span>
-                </a>
-            </div>
-            
-            <div class="sidebar-footer">
-                <div class="admin-info">
-                    <div class="admin-avatar">
-                        <i class="fas fa-user"></i>
+<body class="bg-gray-50 font-inter">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-sm border-b border-gray-200 fixed w-full top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 flex items-center">
+                        <i class="fas fa-umbrella-beach text-primary text-2xl mr-3"></i>
+                        <h1 class="text-xl font-bold text-gray-900">Paradise Resort</h1>
                     </div>
-                    <div class="admin-details">
-                        <div class="admin-name"><?php echo htmlspecialchars($adminInfo['Admin_Email'] ?? 'Administrator'); ?></div>
-                        <div class="admin-role">System Admin</div>
+                    <div class="hidden sm:ml-8 sm:flex sm:space-x-8">
+                        <a href="dashboard.php" class="text-gray-500 hover:text-gray-900 px-3 py-2 text-sm font-medium transition-colors">
+                            <i class="fas fa-tachometer-alt mr-2"></i>Dashboard
+                        </a>
+                        <a href="manage_bookings.php" class="text-gray-500 hover:text-gray-900 px-3 py-2 text-sm font-medium transition-colors">
+                            <i class="fas fa-calendar-check mr-2"></i>Bookings
+                        </a>
+                        <a href="manage_rooms.php" class="text-primary border-b-2 border-primary px-3 py-2 text-sm font-medium">
+                            <i class="fas fa-bed mr-2"></i>Rooms
+                        </a>
+                        <a href="manage_customers.php" class="text-gray-500 hover:text-gray-900 px-3 py-2 text-sm font-medium transition-colors">
+                            <i class="fas fa-users mr-2"></i>Customers
+                        </a>
+                        <a href="manage_amenities.php" class="text-gray-500 hover:text-gray-900 px-3 py-2 text-sm font-medium transition-colors">
+                            <i class="fas fa-star mr-2"></i>Amenities
+                        </a>
+                        <a href="manage_services.php" class="text-gray-500 hover:text-gray-900 px-3 py-2 text-sm font-medium transition-colors">
+                            <i class="fas fa-concierge-bell mr-2"></i>Services
+                        </a>
                     </div>
                 </div>
-                <a href="../logout.php" class="logout-btn">
-                    <i class="fas fa-sign-out-alt"></i>
-                </a>
+                
+                <div class="flex items-center">
+                    <div class="flex items-center space-x-4">
+                        <span class="text-sm text-gray-700">Welcome, <?php echo htmlspecialchars($adminInfo['Admin_Email'] ?? 'Administrator'); ?></span>
+                        <a href="../logout.php" class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                            <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                        </a>
+                    </div>
+                </div>
             </div>
-        </nav>
+        </div>
+    </nav>
 
-        <!-- Main Content -->
-        <main class="admin-content">
-            <div class="content-header">
-                <div class="header-left">
-                    <h1>Room Management</h1>
-                    <p>Manage resort rooms, rates, and availability</p>
-                </div>
-                <div class="header-right">
-                    <button class="btn btn-primary" onclick="openAddRoomModal()">
-                        <i class="fas fa-plus"></i> Add New Room
-                    </button>
-                    <button class="btn btn-secondary" onclick="location.reload()">
-                        <i class="fas fa-sync"></i> Refresh
-                    </button>
+    <!-- Main Content -->
+    <main class="pt-16">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <!-- Header -->
+            <div class="mb-8">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <h1 class="text-3xl font-bold text-gray-900">Room Management</h1>
+                        <p class="mt-2 text-sm text-gray-600">Manage resort rooms, rates, and availability</p>
+                    </div>
+                    <div class="mt-4 sm:mt-0 flex space-x-3">
+                        <button onclick="openAddRoomModal()" class="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
+                            <i class="fas fa-plus mr-2"></i>Add New Room
+                        </button>
+                        <button onclick="location.reload()" class="bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
+                            <i class="fas fa-sync mr-2"></i>Refresh
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <div class="section-content active">
-                <!-- Room Statistics -->
-                <div class="stats-grid" style="margin-bottom: 2rem;">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background: linear-gradient(135deg, #4a9960, #66d9a3);">
-                            <i class="fas fa-bed"></i>
+            <!-- Statistics Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-blue-50 rounded-lg">
+                            <i class="fas fa-bed text-blue-600 text-xl"></i>
                         </div>
-                        <div class="stat-info">
-                            <h3><?php echo count($rooms); ?></h3>
-                            <p>Total Rooms</p>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background: linear-gradient(135deg, #28a745, #20c997);">
-                            <i class="fas fa-check-circle"></i>
-                        </div>
-                        <div class="stat-info">
-                            <h3><?php echo count(array_filter($rooms, fn($r) => $r['Room_Status'] === 'Available')); ?></h3>
-                            <p>Available Rooms</p>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background: linear-gradient(135deg, #dc3545, #c82333);">
-                            <i class="fas fa-times-circle"></i>
-                        </div>
-                        <div class="stat-info">
-                            <h3><?php echo count(array_filter($rooms, fn($r) => $r['Room_Status'] === 'Unavailable')); ?></h3>
-                            <p>Unavailable Rooms</p>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background: linear-gradient(135deg, #f093fb, #f5576c);">
-                            <i class="fas fa-peso-sign"></i>
-                        </div>
-                        <div class="stat-info">
-                            <h3>₱<?php echo number_format(array_sum(array_column($rooms, 'total_revenue')), 2); ?></h3>
-                            <p>Total Revenue</p>
+                        <div class="ml-4">
+                            <h3 class="text-2xl font-bold text-gray-900"><?php echo $totalRooms; ?></h3>
+                            <p class="text-sm text-gray-600">Total Rooms</p>
                         </div>
                     </div>
                 </div>
+                
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-green-50 rounded-lg">
+                            <i class="fas fa-check-circle text-green-600 text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-2xl font-bold text-gray-900"><?php echo $availableRooms; ?></h3>
+                            <p class="text-sm text-gray-600">Available</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-red-50 rounded-lg">
+                            <i class="fas fa-times-circle text-red-600 text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-2xl font-bold text-gray-900"><?php echo $unavailableRooms; ?></h3>
+                            <p class="text-sm text-gray-600">Unavailable</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex items-center">
+                        <div class="p-2 bg-purple-50 rounded-lg">
+                            <i class="fas fa-peso-sign text-purple-600 text-xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-2xl font-bold text-gray-900">₱<?php echo number_format($totalRevenue, 0); ?></h3>
+                            <p class="text-sm text-gray-600">Total Revenue</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-                <!-- Room Cards Grid -->
-                <div class="rooms-grid">
-                    <?php foreach ($rooms as $room): ?>
-                    <div class="room-card" data-room-id="<?php echo $room['Room_ID']; ?>">
-                        <div class="room-header">
-                            <div class="room-type">
-                                <i class="fas fa-bed"></i>
-                                <h3><?php echo htmlspecialchars($room['Room_Type']); ?> Room</h3>
+            <!-- Rooms Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <?php foreach ($rooms as $room): ?>
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow duration-300">
+                    <!-- Room Header -->
+                    <div class="p-6 pb-4">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center">
+                                <div class="p-2 bg-primary bg-opacity-10 rounded-lg mr-3">
+                                    <i class="fas fa-bed text-primary text-lg"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-lg font-semibold text-gray-900"><?php echo htmlspecialchars($room['Room_Type']); ?> Room</h3>
+                                    <p class="text-sm text-gray-500">ID: #<?php echo $room['Room_ID']; ?></p>
+                                </div>
                             </div>
-                            <div class="room-status">
-                                <select class="status-select" data-room-id="<?php echo $room['Room_ID']; ?>">
-                                    <option value="Available" <?php echo $room['Room_Status'] === 'Available' ? 'selected' : ''; ?>>Available</option>
-                                    <option value="Unavailable" <?php echo $room['Room_Status'] === 'Unavailable' ? 'selected' : ''; ?>>Unavailable</option>
-                                    <option value="Maintenance" <?php echo $room['Room_Status'] === 'Maintenance' ? 'selected' : ''; ?>>Maintenance</option>
+                            <div class="relative">
+                                <select class="status-select appearance-none bg-gray-50 border border-gray-300 rounded-lg px-3 py-1 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent cursor-pointer" 
+                                        data-room-id="<?php echo $room['Room_ID']; ?>"
+                                        onchange="updateRoomStatus(<?php echo $room['Room_ID']; ?>, this.value)">
+                                    <option value="Available" <?php echo $room['Room_Status'] === 'Available' ? 'selected' : ''; ?> class="text-green-600">Available</option>
+                                    <option value="Unavailable" <?php echo $room['Room_Status'] === 'Unavailable' ? 'selected' : ''; ?> class="text-red-600">Unavailable</option>
+                                    <option value="Maintenance" <?php echo $room['Room_Status'] === 'Maintenance' ? 'selected' : ''; ?> class="text-yellow-600">Maintenance</option>
                                 </select>
                             </div>
                         </div>
-                        
-                        <div class="room-details">
-                            <div class="room-info">
-                                <div class="info-item">
-                                    <span class="label">Rate per Night:</span>
-                                    <span class="value">₱<?php echo number_format($room['Room_Rate'], 2); ?></span>
-                                </div>
-                                <div class="info-item">
-                                    <span class="label">Capacity:</span>
-                                    <span class="value"><?php echo $room['Room_Cap']; ?> guests</span>
-                                </div>
-                                <div class="info-item">
-                                    <span class="label">Total Bookings:</span>
-                                    <span class="value"><?php echo $room['total_bookings'] ?? 0; ?></span>
-                                </div>
-                                <div class="info-item">
-                                    <span class="label">Revenue Generated:</span>
-                                    <span class="value">₱<?php echo number_format($room['total_revenue'] ?? 0, 2); ?></span>
-                                </div>
+
+                        <!-- Room Details -->
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                                <span class="text-sm text-gray-600">Rate per Night</span>
+                                <span class="text-sm font-semibold text-gray-900">₱<?php echo number_format($room['Room_Rate'], 2); ?></span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                                <span class="text-sm text-gray-600">Guest Capacity</span>
+                                <span class="text-sm font-semibold text-gray-900"><?php echo $room['Room_Cap']; ?> guests</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                                <span class="text-sm text-gray-600">Total Bookings</span>
+                                <span class="text-sm font-semibold text-gray-900"><?php echo $room['total_bookings'] ?? 0; ?></span>
+                            </div>
+                            <div class="flex justify-between items-center py-2">
+                                <span class="text-sm text-gray-600">Revenue Generated</span>
+                                <span class="text-sm font-semibold text-green-600">₱<?php echo number_format($room['total_revenue'] ?? 0, 2); ?></span>
                             </div>
                         </div>
-                        
-                        <div class="room-actions">
-                            <button class="btn-icon btn-edit" onclick="editRoom(<?php echo $room['Room_ID']; ?>)" title="Edit Room">
-                                <i class="fas fa-edit"></i>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="px-6 py-4 bg-gray-50 border-t border-gray-200">
+                        <div class="flex justify-center space-x-3">
+                            <button onclick="editRoom(<?php echo $room['Room_ID']; ?>)" 
+                                    class="flex-1 bg-white hover:bg-blue-50 text-blue-600 border border-blue-200 hover:border-blue-300 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                                    title="Edit Room">
+                                <i class="fas fa-edit mr-1"></i>Edit
                             </button>
-                            <button class="btn-icon btn-view" onclick="viewRoomBookings(<?php echo $room['Room_ID']; ?>)" title="View Bookings">
-                                <i class="fas fa-calendar-alt"></i>
+                            <button onclick="viewRoomBookings(<?php echo $room['Room_ID']; ?>)" 
+                                    class="flex-1 bg-white hover:bg-green-50 text-green-600 border border-green-200 hover:border-green-300 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                                    title="View Bookings">
+                                <i class="fas fa-calendar-alt mr-1"></i>Bookings
                             </button>
-                            <button class="btn-icon btn-danger" onclick="deleteRoom(<?php echo $room['Room_ID']; ?>)" title="Delete Room">
-                                <i class="fas fa-trash"></i>
+                            <button onclick="deleteRoom(<?php echo $room['Room_ID']; ?>)" 
+                                    class="flex-1 bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                                    title="Delete Room">
+                                <i class="fas fa-trash mr-1"></i>Delete
                             </button>
                         </div>
                     </div>
-                    <?php endforeach; ?>
                 </div>
+                <?php endforeach; ?>
             </div>
-        </main>
-    </div>
+        </div>
+    </main>
 
     <!-- Add/Edit Room Modal -->
-    <div id="roomModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="roomModalTitle"><i class="fas fa-bed"></i> Add New Room</h2>
-                <button class="close-modal" onclick="closeModal('roomModal')">&times;</button>
+    <div id="roomModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between p-6 border-b border-gray-200">
+                <h2 id="roomModalTitle" class="text-xl font-semibold text-gray-900">
+                    <i class="fas fa-bed mr-2 text-primary"></i>Add New Room
+                </h2>
+                <button onclick="closeModal('roomModal')" class="text-gray-400 hover:text-gray-600 transition-colors">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
             </div>
-            <div class="modal-body">
-                <form id="roomForm">
-                    <input type="hidden" id="roomId" name="room_id">
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="roomType">Room Type *</label>
-                            <input type="text" id="roomType" name="room_type" required placeholder="e.g., Deluxe, Standard, Suite">
-                        </div>
-                        <div class="form-group">
-                            <label for="roomRate">Rate per Night (₱) *</label>
-                            <input type="number" id="roomRate" name="room_rate" required min="0" step="0.01" placeholder="0.00">
-                        </div>
-                        <div class="form-group">
-                            <label for="roomCapacity">Guest Capacity *</label>
-                            <input type="number" id="roomCapacity" name="room_capacity" required min="1" placeholder="Maximum number of guests">
-                        </div>
-                        <div class="form-group">
-                            <label for="roomStatus">Status *</label>
-                            <select id="roomStatus" name="room_status" required>
-                                <option value="Available">Available</option>
-                                <option value="Unavailable">Unavailable</option>
-                                <option value="Maintenance">Maintenance</option>
-                            </select>
-                        </div>
+
+            <!-- Modal Body -->
+            <form id="roomForm" class="p-6">
+                <input type="hidden" id="roomId" name="room_id">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="roomType" class="block text-sm font-medium text-gray-700 mb-2">Room Type *</label>
+                        <input type="text" id="roomType" name="room_type" required 
+                               class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-colors"
+                               placeholder="e.g., Deluxe, Standard, Suite">
                     </div>
-                    <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('roomModal')">Cancel</button>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-save"></i> <span id="submitBtnText">Save Room</span>
-                        </button>
+                    
+                    <div>
+                        <label for="roomRate" class="block text-sm font-medium text-gray-700 mb-2">Rate per Night (₱) *</label>
+                        <input type="number" id="roomRate" name="room_rate" required min="0" step="0.01"
+                               class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-colors"
+                               placeholder="0.00">
                     </div>
-                </form>
-            </div>
+                    
+                    <div>
+                        <label for="roomCapacity" class="block text-sm font-medium text-gray-700 mb-2">Guest Capacity *</label>
+                        <input type="number" id="roomCapacity" name="room_capacity" required min="1"
+                               class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-colors"
+                               placeholder="Maximum number of guests">
+                    </div>
+                    
+                    <div>
+                        <label for="roomStatus" class="block text-sm font-medium text-gray-700 mb-2">Status *</label>
+                        <select id="roomStatus" name="room_status" required
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-colors">
+                            <option value="Available">Available</option>
+                            <option value="Unavailable">Unavailable</option>
+                            <option value="Maintenance">Maintenance</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-4 mt-8 pt-6 border-t border-gray-200">
+                    <button type="button" onclick="closeModal('roomModal')" 
+                            class="px-6 py-3 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium">
+                        Cancel
+                    </button>
+                    <button type="submit" 
+                            class="px-6 py-3 bg-primary hover:bg-primary-dark text-white rounded-lg transition-colors font-medium">
+                        <i class="fas fa-save mr-2"></i><span id="submitBtnText">Save Room</span>
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
     <!-- Notification Container -->
-    <div id="notificationContainer" class="notification-container"></div>
+    <div id="notificationContainer" class="fixed top-4 right-4 z-50 space-y-4"></div>
 
     <script>
         // Initialize page
         document.addEventListener('DOMContentLoaded', function() {
-            // Sidebar toggle
-            const sidebarToggle = document.getElementById('sidebarToggle');
-            const sidebar = document.querySelector('.admin-sidebar');
-            
-            sidebarToggle.addEventListener('click', function() {
-                sidebar.classList.toggle('collapsed');
-            });
-
-            // Status change handling
-            document.querySelectorAll('.status-select').forEach(select => {
-                select.addEventListener('change', function() {
-                    const roomId = this.dataset.roomId;
-                    const newStatus = this.value;
-                    updateRoomStatus(roomId, newStatus);
-                });
-            });
-
             // Room form submission
             document.getElementById('roomForm').addEventListener('submit', function(e) {
                 e.preventDefault();
@@ -465,18 +531,15 @@ $flash = NotificationManager::getFlashMessage();
                     }
                 })
                 .catch(error => {
+                    console.error('Error:', error);
                     showNotification('Network error occurred', 'error');
                 });
             });
-
-            // Show flash message if exists
-            <?php if ($flash): ?>
-            showNotification('<?php echo addslashes($flash['message']); ?>', '<?php echo $flash['type']; ?>');
-            <?php endif; ?>
         });
 
+        // Modal functions
         function openAddRoomModal() {
-            document.getElementById('roomModalTitle').innerHTML = '<i class="fas fa-bed"></i> Add New Room';
+            document.getElementById('roomModalTitle').innerHTML = '<i class="fas fa-bed mr-2 text-primary"></i>Add New Room';
             document.getElementById('submitBtnText').textContent = 'Save Room';
             document.getElementById('roomForm').reset();
             document.getElementById('roomId').value = '';
@@ -484,19 +547,32 @@ $flash = NotificationManager::getFlashMessage();
         }
 
         function editRoom(roomId) {
-            // Find room data from the page (you could also fetch from server)
+            // Find room data from the page
             const roomCard = document.querySelector(`[data-room-id="${roomId}"]`);
-            const roomType = roomCard.querySelector('.room-type h3').textContent.replace(' Room', '');
-            const roomRate = roomCard.querySelector('.info-item .value').textContent.replace('₱', '').replace(/,/g, '');
+            if (!roomCard) return;
             
-            document.getElementById('roomModalTitle').innerHTML = '<i class="fas fa-edit"></i> Edit Room';
-            document.getElementById('submitBtnText').textContent = 'Update Room';
-            document.getElementById('roomId').value = roomId;
-            document.getElementById('roomType').value = roomType;
-            document.getElementById('roomRate').value = roomRate;
+            const roomTypeElement = roomCard.querySelector('h3');
+            const roomDetails = roomCard.querySelectorAll('.font-semibold');
             
-            // You would need to get other values from the room data
-            openModal('roomModal');
+            if (roomTypeElement && roomDetails.length >= 2) {
+                const roomType = roomTypeElement.textContent.replace(' Room', '');
+                const roomRate = roomDetails[0].textContent.replace('₱', '').replace(/,/g, '');
+                const roomCapacity = roomDetails[1].textContent.replace(' guests', '');
+                
+                document.getElementById('roomModalTitle').innerHTML = '<i class="fas fa-edit mr-2 text-primary"></i>Edit Room';
+                document.getElementById('submitBtnText').textContent = 'Update Room';
+                document.getElementById('roomId').value = roomId;
+                document.getElementById('roomType').value = roomType;
+                document.getElementById('roomRate').value = roomRate;
+                document.getElementById('roomCapacity').value = roomCapacity;
+                
+                const statusSelect = roomCard.querySelector('.status-select');
+                if (statusSelect) {
+                    document.getElementById('roomStatus').value = statusSelect.value;
+                }
+                
+                openModal('roomModal');
+            }
         }
 
         function updateRoomStatus(roomId, status) {
@@ -515,10 +591,11 @@ $flash = NotificationManager::getFlashMessage();
                     showNotification(data.message, 'success');
                 } else {
                     showNotification(data.message, 'error');
-                    location.reload(); // Reload to reset the select
+                    location.reload();
                 }
             })
             .catch(error => {
+                console.error('Error:', error);
                 showNotification('Network error occurred', 'error');
                 location.reload();
             });
@@ -547,329 +624,76 @@ $flash = NotificationManager::getFlashMessage();
                 }
             })
             .catch(error => {
+                console.error('Error:', error);
                 showNotification('Network error occurred', 'error');
             });
         }
 
         function viewRoomBookings(roomId) {
-            // Redirect to bookings page with room filter
             window.location.href = `manage_bookings.php?room=${roomId}`;
         }
 
         function openModal(modalId) {
-            document.getElementById(modalId).style.display = 'flex';
+            const modal = document.getElementById(modalId);
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            document.body.style.overflow = 'hidden';
         }
 
         function closeModal(modalId) {
-            document.getElementById(modalId).style.display = 'none';
+            const modal = document.getElementById(modalId);
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            document.body.style.overflow = 'auto';
         }
 
         function showNotification(message, type = 'info') {
+            const container = document.getElementById('notificationContainer');
             const notification = document.createElement('div');
-            notification.className = `notification ${type}`;
+            
+            const bgColor = type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
+                           type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
+                           'bg-blue-50 border-blue-200 text-blue-800';
+                           
+            const iconClass = type === 'success' ? 'fa-check-circle text-green-500' :
+                             type === 'error' ? 'fa-exclamation-circle text-red-500' :
+                             'fa-info-circle text-blue-500';
+            
+            notification.className = `${bgColor} border rounded-lg p-4 shadow-lg max-w-md transform transition-all duration-300 translate-x-0`;
             notification.innerHTML = `
-                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
-                <span>${message}</span>
-                <button class="close-notification" onclick="this.parentElement.remove()">&times;</button>
+                <div class="flex items-center">
+                    <i class="fas ${iconClass} mr-3"></i>
+                    <span class="font-medium">${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" class="ml-auto text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
             `;
             
-            document.getElementById('notificationContainer').appendChild(notification);
+            container.appendChild(notification);
             
+            // Auto remove after 5 seconds
             setTimeout(() => {
                 if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification);
+                    notification.style.transform = 'translateX(100%)';
+                    setTimeout(() => notification.remove(), 300);
                 }
             }, 5000);
         }
+
+        // Close modal when clicking outside
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('fixed') && e.target.classList.contains('inset-0')) {
+                closeModal('roomModal');
+            }
+        });
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal('roomModal');
+            }
+        });
     </script>
-
-    <style>
-        .rooms-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 1.5rem;
-            margin-top: 2rem;
-        }
-
-        .room-card {
-            background: white;
-            border-radius: 12px;
-            padding: 1.5rem;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-            border: 1px solid #e2e8f0;
-            transition: all 0.3s ease;
-        }
-
-        .room-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
-        }
-
-        .room-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.5rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid #f7fafc;
-        }
-
-        .room-type {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-
-        .room-type i {
-            color: #4a9960;
-            font-size: 1.5rem;
-        }
-
-        .room-type h3 {
-            color: #2d3748;
-            margin: 0;
-            font-size: 1.3rem;
-        }
-
-        .room-details {
-            margin-bottom: 1.5rem;
-        }
-
-        .room-info {
-            display: flex;
-            flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        .info-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .info-item .label {
-            color: #718096;
-            font-size: 0.9rem;
-        }
-
-        .info-item .value {
-            color: #2d3748;
-            font-weight: 600;
-        }
-
-        .room-actions {
-            display: flex;
-            gap: 0.5rem;
-            justify-content: center;
-        }
-
-        .btn-icon {
-            background: white;
-            border: 1px solid #e2e8f0;
-            padding: 0.75rem;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            color: #718096;
-        }
-
-        .btn-icon:hover {
-            background: #f8fafc;
-        }
-
-        .btn-edit:hover {
-            background: #4a9960;
-            color: white;
-            border-color: #4a9960;
-        }
-
-        .btn-view:hover {
-            background: #3182ce;
-            color: white;
-            border-color: #3182ce;
-        }
-
-        .btn-danger:hover {
-            background: #e53e3e;
-            color: white;
-            border-color: #e53e3e;
-        }
-
-        .status-select {
-            background: white;
-            border: 1px solid #e2e8f0;
-            padding: 0.5rem;
-            border-radius: 6px;
-            color: #2d3748;
-            font-size: 0.9rem;
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 2000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-content {
-            background: white;
-            border-radius: 12px;
-            max-width: 600px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-
-        .modal-header {
-            padding: 1.5rem;
-            border-bottom: 1px solid #e2e8f0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .modal-body {
-            padding: 1.5rem;
-        }
-
-        .close-modal {
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            cursor: pointer;
-            color: #718096;
-        }
-
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1rem;
-            margin-bottom: 2rem;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .form-group label {
-            margin-bottom: 0.5rem;
-            color: #2d3748;
-            font-weight: 600;
-        }
-
-        .form-group input,
-        .form-group select {
-            padding: 0.75rem;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            color: #2d3748;
-            transition: border-color 0.3s ease;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus {
-            outline: none;
-            border-color: #4a9960;
-            box-shadow: 0 0 0 3px rgba(74, 153, 96, 0.1);
-        }
-
-        .form-actions {
-            display: flex;
-            gap: 1rem;
-            justify-content: flex-end;
-        }
-
-        .btn {
-            padding: 0.75rem 1.5rem;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #4a9960, #66d9a3);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(74, 153, 96, 0.3);
-        }
-
-        .btn-secondary {
-            background: white;
-            color: #718096;
-            border: 1px solid #e2e8f0;
-        }
-
-        .btn-secondary:hover {
-            background: #f8fafc;
-        }
-
-        .notification-container {
-            position: fixed;
-            top: 2rem;
-            right: 2rem;
-            z-index: 3000;
-        }
-
-        .notification {
-            background: white;
-            border-radius: 8px;
-            padding: 1rem 1.5rem;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            min-width: 300px;
-        }
-
-        .notification.success {
-            border-left: 4px solid #48bb78;
-        }
-
-        .notification.error {
-            border-left: 4px solid #e53e3e;
-        }
-
-        .notification.info {
-            border-left: 4px solid #4299e1;
-        }
-
-        .close-notification {
-            background: none;
-            border: none;
-            color: #718096;
-            cursor: pointer;
-            margin-left: auto;
-        }
-
-        @media (max-width: 768px) {
-            .rooms-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .form-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .form-actions {
-                flex-direction: column;
-            }
-        }
-    </style>
 </body>
 </html>

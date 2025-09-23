@@ -287,7 +287,7 @@ function incrementLoginAttempts() {
  * Redirect with error message
  */
 function redirectWithError($error, $params = []) {
-    $redirect_url = '../login.php?error=' . urlencode($error);
+    $redirect_url = 'login.php?error=' . urlencode($error);
     
     foreach ($params as $key => $value) {
         $redirect_url .= '&' . urlencode($key) . '=' . urlencode($value);
