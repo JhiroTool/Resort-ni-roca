@@ -8,14 +8,28 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-session_start();
+// Start secure session
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
-// Check if admin is logged in - temporarily disabled for testing
-if (!isset($_SESSION['admin_id'])) {
-    $_SESSION['admin_id'] = 1;
+// SECURITY CHECK - Admin authentication required
+if (!isset($_SESSION['admin_id']) || !isset($_SESSION['admin_username']) || !isset($_SESSION['admin_role'])) {
+    // Redirect to admin login page
+    header("Location: ../login.php?admin=1&error=access_denied");
+    exit();
+}
+
+// Verify session is still valid (additional security)
+if (empty($_SESSION['admin_id']) || empty($_SESSION['admin_username'])) {
+    // Session corrupted, destroy and redirect
+    session_destroy();
+    header("Location: ../login.php?admin=1&error=session_expired");
+    exit();
+}
     $_SESSION['admin_username'] = 'Administrator';
     $_SESSION['admin_role'] = 'Super Admin';
-}
+
 
 // Database configuration
 class DatabaseManager {

@@ -145,8 +145,18 @@ class AuthManager {
             session_start();
         }
         
-        if (!isset($_SESSION['admin_id'])) {
-            header("Location: ../login.php?type=admin&error=login_required");
+        // SECURITY CHECK - Admin authentication required
+        if (!isset($_SESSION['admin_id']) || !isset($_SESSION['admin_username']) || !isset($_SESSION['admin_role'])) {
+            // Redirect to admin login page
+            header("Location: ../login.php?admin=1&error=access_denied");
+            exit();
+        }
+
+        // Verify session is still valid (additional security)
+        if (empty($_SESSION['admin_id']) || empty($_SESSION['admin_username'])) {
+            // Session corrupted, destroy and redirect
+            session_destroy();
+            header("Location: ../login.php?admin=1&error=session_expired");
             exit();
         }
         
